@@ -128,7 +128,9 @@ def format_status_update(appeal: Appeal, *, custom_text: str | None = None) -> s
         lines.extend(["", f"💬 {h(custom_text)}"])
     elif appeal.admin_note and appeal.status in {"answered", "not_our_scope"}:
         lines.extend(["", f"💬 {h(appeal.admin_note)}"])
-    lines.extend(["", "Дякуємо, що звернулися до <b>КММР</b>."])
+    lines.extend(
+        ["", "Дякуємо, що звернулися до <b>Київської Міської Молодіжної Ради</b>."]
+    )
     return "\n".join(lines)
 
 

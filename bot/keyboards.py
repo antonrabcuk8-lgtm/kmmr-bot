@@ -10,7 +10,6 @@ def main_menu(*, is_admin: bool = False) -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.button(text="✍️ Залишити звернення")
     builder.button(text="📂 Мої звернення")
-    builder.button(text="🚨 Є загроза просто зараз")
     if is_admin:
         builder.button(text="🛠 Адмінка")
     builder.adjust(1)

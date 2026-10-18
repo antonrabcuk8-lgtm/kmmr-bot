@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from bot.config import ADMIN_IDS
-from bot.constants import EMERGENCY_TEXT, HELP_EXTRA, WELCOME_TEXT
+from bot.constants import HELP_EXTRA, WELCOME_TEXT
 from bot.keyboards import main_menu
 
 router = Router()
@@ -29,16 +29,6 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 async def cmd_help(message: Message) -> None:
     await message.answer(
         WELCOME_TEXT + HELP_EXTRA,
-        reply_markup=_menu_for(message.from_user.id if message.from_user else None),
-    )
-
-
-@router.message(F.text == "🚨 Є загроза просто зараз")
-@router.message(F.text == "Є загроза просто зараз")
-async def emergency(message: Message, state: FSMContext) -> None:
-    await state.clear()
-    await message.answer(
-        EMERGENCY_TEXT,
         reply_markup=_menu_for(message.from_user.id if message.from_user else None),
     )
 

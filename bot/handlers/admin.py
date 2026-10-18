@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
+from io import BytesIO
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, Filter, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
+from bot.backup import build_backup_file, send_daily_backup
 from bot.config import ADMIN_IDS, OVERDUE_DAYS
 from bot.constants import STATUSES
 from bot.db import db
@@ -22,7 +25,7 @@ from bot.formatters import (
 )
 from bot.jobs import send_monthly_digest
 from bot.keyboards import admin_menu_keyboard, admin_status_keyboard, main_menu
-from bot.states import AdminReply
+from bot.states import AdminReply, AdminRestore
 
 router = Router()
 
@@ -72,6 +75,8 @@ async def cmd_admin(message: Message, state: FSMContext) -> None:
         "/reply КММР-0001 текст — відповідь\n"
         "/digest — надіслати дайджест за минулий місяць\n"
         "/overdue — нагадування про «нові» старше 7 днів\n"
+        "/backup — повний бекап усіх звернень (JSON)\n"
+        "/restore — відновити базу з JSON-бекапу\n"
         "/admins — хто в ADMIN_IDS",
         reply_markup=admin_menu_keyboard(),
     )
@@ -186,6 +191,74 @@ async def cmd_admins(message: Message) -> None:
         mark = " ← ти" if message.from_user and admin_id == message.from_user.id else ""
         lines.append(f"• <code>{admin_id}</code>{mark}")
     await message.answer("\n".join(lines))
+
+
+@router.message(Command("backup"), IsAdmin())
+async def cmd_backup(message: Message, bot: Bot) -> None:
+    ok = await send_daily_backup(bot, force=True)
+    if ok:
+        await message.answer(
+            "💾 Повний JSON-бекап надіслано всім адмінам.\n"
+            "Збережи файл на ПК / у «Збережене». Відновлення: /restore"
+        )
+        return
+
+    # якщо розсилка не пройшла — відправимо хоча б тобі
+    content, filename, count = await build_backup_file()
+    document = BufferedInputFile(content, filename=filename)
+    await message.answer_document(
+        document,
+        caption=(
+            f"💾 Повний бекап\nЗвернень: <b>{count}</b>\n"
+            "Для відновлення: /restore"
+        ),
+    )
+
+
+@router.message(Command("restore"), IsAdmin())
+async def cmd_restore(message: Message, state: FSMContext) -> None:
+    await state.set_state(AdminRestore.waiting_file)
+    await message.answer(
+        "♻️ Надішли файл бекапу <b>.json</b> (той, що бот надсилав у /backup).\n"
+        "Увага: поточні звернення на сервері будуть <b>замінені</b> даними з файлу.\n"
+        "Після цього /stats знову покаже ту саму статистику.\n\n"
+        "/cancel — скасувати."
+    )
+
+
+@router.message(AdminRestore.waiting_file, IsAdmin(), F.document)
+async def receive_restore_file(message: Message, state: FSMContext, bot: Bot) -> None:
+    doc = message.document
+    name = (doc.file_name or "").lower()
+    if not name.endswith(".json"):
+        await message.answer("Потрібен файл з розширенням <code>.json</code>.")
+        return
+
+    buffer = BytesIO()
+    await bot.download(doc, destination=buffer)
+    raw = buffer.getvalue()
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+        result = await db.import_snapshot(payload)
+    except Exception as exc:
+        await message.answer(f"Не вдалося відновити: {h(exc)}")
+        return
+
+    await state.clear()
+    stats = await db.stats_month()
+    await message.answer(
+        "✅ <b>Базу відновлено</b>\n"
+        f"Звернень: <b>{result['appeals']}</b>\n"
+        f"Meta-записів: <b>{result['meta']}</b>\n\n"
+        + format_stats(stats)
+    )
+
+
+@router.message(AdminRestore.waiting_file, IsAdmin())
+async def restore_need_file(message: Message) -> None:
+    if message.text and message.text.startswith("/"):
+        return
+    await message.answer("Надішли саме файл <code>.json</code> або /cancel.")
 
 
 @router.message(Command("export"), IsAdmin())
@@ -359,13 +432,16 @@ async def set_status(callback: CallbackQuery, bot: Bot) -> None:
 @router.message(Command("digest"))
 @router.message(Command("overdue"))
 @router.message(Command("admins"))
+@router.message(Command("backup"))
+@router.message(Command("restore"))
 @router.message(F.text.in_({"🛠 Адмінка", "Адмінка"}))
 async def admin_denied(message: Message) -> None:
     await message.answer("⛔️ Ця команда лише для адміністраторів бота.")
 
 
 @router.message(StateFilter(AdminReply.waiting_text))
-async def admin_reply_non_admin(message: Message, state: FSMContext) -> None:
+@router.message(StateFilter(AdminRestore.waiting_file))
+async def admin_state_non_admin(message: Message, state: FSMContext) -> None:
     if message.from_user and message.from_user.id in ADMIN_IDS:
         return
     await state.clear()

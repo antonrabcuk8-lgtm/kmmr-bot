@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import Bot
+from aiogram.types import BufferedInputFile
 
 from bot.config import ADMIN_IDS
 
@@ -18,4 +19,25 @@ async def notify_admins(bot: Bot, text: str, *, reply_markup=None) -> int:
             sent += 1
         except Exception:
             logger.warning("Не вдалося написати адміну %s", admin_id, exc_info=True)
+    return sent
+
+
+async def notify_admins_document(
+    bot: Bot,
+    *,
+    content: bytes,
+    filename: str,
+    caption: str,
+) -> int:
+    """Надіслати файл усім адмінам."""
+    sent = 0
+    for admin_id in ADMIN_IDS:
+        try:
+            document = BufferedInputFile(content, filename=filename)
+            await bot.send_document(admin_id, document, caption=caption)
+            sent += 1
+        except Exception:
+            logger.warning(
+                "Не вдалося надіслати файл адміну %s", admin_id, exc_info=True
+            )
     return sent

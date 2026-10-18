@@ -12,3 +12,7 @@ class AppealForm(StatesGroup):
 
 class AdminReply(StatesGroup):
     waiting_text = State()
+
+
+class AdminRestore(StatesGroup):
+    waiting_file = State()

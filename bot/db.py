@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -11,6 +12,8 @@ from typing import Any, AsyncIterator
 import aiosqlite
 
 from bot.config import DB_PATH
+
+SNAPSHOT_FORMAT = "kmmr-appeals-v1"
 
 
 def utc_now() -> str:
@@ -442,5 +445,117 @@ class Database:
             )
         return buffer.getvalue()
 
+    async def count_all(self) -> int:
+        async with self.connect() as db:
+            cursor = await db.execute("SELECT COUNT(*) AS cnt FROM appeals")
+            row = await cursor.fetchone()
+            return int(row["cnt"]) if row else 0
+
+    async def export_snapshot(self) -> dict[str, Any]:
+        """Повний знімок бази для бекапу/відновлення статистики."""
+        async with self.connect() as db:
+            cursor = await db.execute(
+                "SELECT * FROM appeals ORDER BY id ASC"
+            )
+            appeal_rows = await cursor.fetchall()
+            cursor = await db.execute("SELECT key, value FROM bot_meta")
+            meta_rows = await cursor.fetchall()
+
+        appeals = []
+        for row in appeal_rows:
+            appeal = _row_to_appeal(row)
+            item = asdict(appeal)
+            item["wants_reply"] = bool(appeal.wants_reply)
+            appeals.append(item)
+
+        return {
+            "format": SNAPSHOT_FORMAT,
+            "exported_at": utc_now(),
+            "appeals_count": len(appeals),
+            "appeals": appeals,
+            "meta": {row["key"]: row["value"] for row in meta_rows},
+        }
+
+    async def export_snapshot_bytes(self) -> bytes:
+        snapshot = await self.export_snapshot()
+        return json.dumps(snapshot, ensure_ascii=False, indent=2).encode("utf-8")
+
+    async def import_snapshot(self, payload: dict[str, Any]) -> dict[str, int]:
+        """
+        Повністю замінює appeals (+ meta з файлу) даними зі знімка.
+        Після цього /stats і вся аналітика знову читають ті самі звернення.
+        """
+        if not isinstance(payload, dict):
+            raise ValueError("Некоректний формат бекапу")
+        if payload.get("format") != SNAPSHOT_FORMAT:
+            raise ValueError(
+                f"Невідомий формат бекапу: {payload.get('format')!r}. "
+                f"Очікується {SNAPSHOT_FORMAT}."
+            )
+        appeals = payload.get("appeals")
+        if not isinstance(appeals, list):
+            raise ValueError("У бекапі немає списку appeals")
+
+        meta = payload.get("meta") or {}
+        if not isinstance(meta, dict):
+            raise ValueError("Некоректне поле meta")
+
+        async with self.connect() as db:
+            await db.execute("DELETE FROM appeals")
+            await db.execute("DELETE FROM bot_meta")
+
+            for item in appeals:
+                await db.execute(
+                    """
+                    INSERT INTO appeals (
+                        id, public_id, user_id, username, appeal_type, district,
+                        topic, text, wants_reply, status, admin_note,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        int(item["id"]),
+                        str(item["public_id"]),
+                        item.get("user_id"),
+                        item.get("username"),
+                        str(item["appeal_type"]),
+                        str(item["district"]),
+                        str(item["topic"]),
+                        str(item["text"]),
+                        1 if item.get("wants_reply") else 0,
+                        str(item.get("status") or "new"),
+                        item.get("admin_note"),
+                        str(item["created_at"]),
+                        str(item["updated_at"]),
+                    ),
+                )
+
+            for key, value in meta.items():
+                await db.execute(
+                    "INSERT INTO bot_meta(key, value) VALUES(?, ?)",
+                    (str(key), str(value)),
+                )
+
+            # щоб наступні INSERT не конфліктували з відновленими id
+            cursor = await db.execute("SELECT MAX(id) AS mx FROM appeals")
+            row = await cursor.fetchone()
+            max_id = int(row["mx"] or 0)
+            if max_id > 0:
+                try:
+                    await db.execute(
+                        "DELETE FROM sqlite_sequence WHERE name = 'appeals'"
+                    )
+                    await db.execute(
+                        "INSERT INTO sqlite_sequence(name, seq) VALUES('appeals', ?)",
+                        (max_id,),
+                    )
+                except Exception:
+                    # sqlite_sequence з’являється після першого AUTOINCREMENT
+                    pass
+            await db.commit()
+
+        return {"appeals": len(appeals), "meta": len(meta)}
+
 
 db = Database()
+

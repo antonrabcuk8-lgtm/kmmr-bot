@@ -13,6 +13,7 @@ from bot.config import (
     JOBS_INTERVAL_SEC,
     OVERDUE_DAYS,
 )
+from bot.backup import send_daily_backup
 from bot.db import db
 from bot.formatters import KYIV, format_digest, format_overdue
 from bot.notify import notify_admins
@@ -88,6 +89,7 @@ async def send_overdue_reminders(bot: Bot, *, force: bool = False) -> bool:
 async def run_jobs_once(bot: Bot) -> None:
     await send_monthly_digest(bot)
     await send_overdue_reminders(bot)
+    await send_daily_backup(bot)
 
 
 async def maybe_run_jobs(bot: Bot) -> None:

@@ -30,10 +30,10 @@ def build_app() -> web.Application:
     bot = create_bot()
     dp = create_dispatcher()
 
-    async def on_startup(bot_: Bot) -> None:
-        await bootstrap(bot_)
+    async def on_startup(bot: Bot) -> None:
+        await bootstrap(bot)
         url = webhook_url()
-        await bot_.set_webhook(
+        await bot.set_webhook(
             url=url,
             secret_token=WEBHOOK_SECRET,
             drop_pending_updates=True,
@@ -41,7 +41,7 @@ def build_app() -> web.Application:
         )
         logger.info("Webhook встановлено: %s", url)
 
-    async def on_shutdown(bot_: Bot) -> None:
+    async def on_shutdown(bot: Bot) -> None:
         logger.info("Зупинка webhook-режиму")
 
     dp.startup.register(on_startup)

@@ -14,7 +14,7 @@ services:
       - key: MODE
         value: webhook
       - key: PYTHON_VERSION
-        value: "3.12.10"
+        value: 3.12.10
       - key: BOT_TOKEN
         sync: false
       - key: ADMIN_IDS

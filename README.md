@@ -45,6 +45,7 @@ Webhook працює так: Telegram сам шле HTTPS-запит → сер�
 | Змінна | Приклад | Опис |
 |---|---|---|
 | `MODE` | `webhook` | обов’язково |
+| `PYTHON_VERSION` | `3.12.10` | не 3.14 — інакше впаде збірка |
 | `BOT_TOKEN` | токен BotFather | секрет |
 | `ADMIN_IDS` | `5729118686` | можна кілька через кому |
 | `WEBHOOK_BASE_URL` | `https://kmmr-bot.onrender.com` | можна не ставити: Render дає `RENDER_EXTERNAL_URL` |

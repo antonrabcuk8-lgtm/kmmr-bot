@@ -1,0 +1,37 @@
+# Blueprint для Render (Web Service + webhook).
+# Free plan: диск ефемерний — після redeploy база може обнулитись.
+# Для постійної бази додай Persistent Disk (платно) і DB_PATH=/var/data/appeals.db
+
+services:
+  - type: web
+    name: kmmr-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run_webhook.py
+    healthCheckPath: /health
+    envVars:
+      - key: MODE
+        value: webhook
+      - key: PYTHON_VERSION
+        value: "3.12.10"
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: WEBHOOK_BASE_URL
+        sync: false
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: WEBHOOK_PATH
+        value: /webhook
+      - key: DAILY_LIMIT
+        value: "3"
+      - key: OVERDUE_DAYS
+        value: "7"
+      - key: DIGEST_DAY
+        value: "1"
+      - key: DIGEST_HOUR
+        value: "10"
+      - key: DB_PATH
+        value: data/appeals.db
